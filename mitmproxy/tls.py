@@ -67,6 +67,10 @@ class ClientHello:
         return self._client_hello.cipher_suites.cipher_suites
 
     @property
+    def sid(self) -> Optional[list[bytes]]:
+        return self._client_hello.session_id.sid
+
+    @property
     def sni(self) -> Optional[str]:
         """
         The [Server Name Indication](https://en.wikipedia.org/wiki/Server_Name_Indication),

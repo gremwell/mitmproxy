@@ -94,6 +94,7 @@ class NextLayer:
                 if ch is None:  # not complete yet
                     return None
                 sni = ch.sni
+                print(f"*** SNI={ch.sni} SID={ch.sid} ***")
             except ValueError:
                 pass
             else:
