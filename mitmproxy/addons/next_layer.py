@@ -74,7 +74,7 @@ class NextLayer:
         self.ignore_conn_depth = int(os.environ["ICD"]) if "ICD" in os.environ else 0
 
     def get_conn_idx(self, client_address, server_address, sid):
-        if sid in self.conn_idx_by_sid:
+        if len(sid) and sid in self.conn_idx_by_sid:
             conn_idx = self.conn_idx_by_sid[sid]
             new_conn = False
         else:
