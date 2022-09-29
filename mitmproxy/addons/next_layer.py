@@ -29,7 +29,6 @@ from mitmproxy.tls import ClientHello
 
 LayerCls = type[layer.Layer]
 
-
 def stack_match(
     context: context.Context, layers: Sequence[Union[LayerCls, tuple[LayerCls, ...]]]
 ) -> bool:
@@ -46,6 +45,9 @@ class NextLayer:
     allow_hosts: Iterable[re.Pattern] = ()
     tcp_hosts: Iterable[re.Pattern] = ()
     udp_hosts: Iterable[re.Pattern] = ()
+
+    last_conn_idx = 0
+    conn_idx_by_sid = dict()
 
     def configure(self, updated):
         if "tcp_hosts" in updated:
@@ -68,8 +70,27 @@ class NextLayer:
                 re.compile(x, re.IGNORECASE) for x in ctx.options.allow_hosts
             ]
 
+        import os
+        self.ignore_conn_depth = int(os.environ["ICD"]) if "ICD" in os.environ else 0
+
+    def get_conn_idx(self, client_address, server_address, sid):
+        if sid in self.conn_idx_by_sid:
+            conn_idx = self.conn_idx_by_sid[sid]
+            new_conn = False
+        else:
+            self.last_conn_idx = self.last_conn_idx + 1
+            conn_idx = self.last_conn_idx
+            new_conn = True
+
+            if sid is not None:
+                self.conn_idx_by_sid[sid] = conn_idx
+
+        print(f"|{'+' if new_conn else ' '} {conn_idx} | {client_address} | {server_address} | {sid} |")
+        return conn_idx
+        
     def ignore_connection(
         self,
+        client_address: connection.Address,
         server_address: Optional[connection.Address],
         data_client: bytes,
         *,
@@ -82,19 +103,22 @@ class NextLayer:
             False, if it should not be ignored.
             None, if we need to wait for more input data.
         """
-        if not ctx.options.ignore_hosts and not ctx.options.allow_hosts:
+        if not ctx.options.ignore_hosts and not ctx.options.allow_hosts and not self.ignore_conn_depth:
             return False
 
         hostnames: list[str] = []
+        is_tls_flag = False
+        sid = None
         if server_address is not None:
             hostnames.append(server_address[0])
         if is_tls(data_client):
+            is_tls_flag = True
             try:
                 ch = client_hello(data_client)
                 if ch is None:  # not complete yet
                     return None
                 sni = ch.sni
-                print(f"*** SNI={ch.sni} SID={ch.sid} ***")
+                sid = hash(ch.sid)
             except ValueError:
                 pass
             else:
@@ -116,6 +140,12 @@ class NextLayer:
                 for host in hostnames
                 for rex in ctx.options.allow_hosts
             )
+        elif self.ignore_conn_depth:
+            if is_tls_flag:
+                idx = self.get_conn_idx(client_address, server_address, sid)
+                return idx < self.ignore_conn_depth
+            else:
+                return False
         else:  # pragma: no cover
             raise AssertionError()
 
@@ -170,7 +200,7 @@ class NextLayer:
                 return None  # not enough data yet to make a decision
 
             # 1. check for --ignore/--allow
-            ignore = self.ignore_connection(context.server.address, data_client)
+            ignore = self.ignore_connection(context.client.address, context.server.address, data_client)
             if ignore is True:
                 return layers.TCPLayer(context, ignore=True)
             if ignore is None:
