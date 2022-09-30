@@ -19,6 +19,8 @@ from collections.abc import Sequence
 import struct
 from typing import Any, Callable, Iterable, Optional, Union
 
+import binascii
+
 from mitmproxy import ctx, dns, exceptions, connection
 from mitmproxy.net.tls import is_tls_record_magic
 from mitmproxy.proxy.layers.http import HTTPMode
@@ -118,7 +120,7 @@ class NextLayer:
                 if ch is None:  # not complete yet
                     return None
                 sni = ch.sni
-                sid = hash(ch.sid)
+                sid = binascii.hexlify(ch.sid).decode('utf-8')[:16] if len(ch.sid) else ''
             except ValueError:
                 pass
             else:
